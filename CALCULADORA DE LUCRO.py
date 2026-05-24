@@ -52,18 +52,18 @@ with col5:
 with col6:
     custo_embalagem = st.number_input("Custo da Embalagem (Caixa/Plástico) (R$)", min_value=0.0, value=3.50, step=0.5)
 
-# --- CÁLCULOS AUTOMÁTICOS ---
-# Custos de Impressão
+# --- CÁLCULOS AUTOMÁTICOS (ORGANIZADOS E SEM REPETIÇÃO) ---
+
+# Custos de Impressão (Material + Energia)
 tempo_horas_imp = horas_imp + (minutos_imp / 60)
 custo_mat = peso * custo_g
 custo_eng = tempo_horas_imp * valor_kwh
-custo_impressao_total = custo_mat + ...
 
-# Custos de Acabamento
+# Custos de Acabamento e Mão de Obra
 custo_mao_de_obra = horas_pintura * valor_hora_tecnica
 custo_pos_total = custo_tintas + custo_embalagem + custo_mao_de_obra
 
-# Custo Geral do Projeto
+# Custo Geral do Projeto (Soma de tudo)
 custo_total_projeto = custo_mat + custo_eng + custo_pos_total
 
 st.markdown("---")
