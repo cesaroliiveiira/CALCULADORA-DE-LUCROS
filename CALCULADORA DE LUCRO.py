@@ -329,6 +329,31 @@ with aba_calc:
                                     min_value=0, value=0, step=1, key=f"acc_{i}_{row['Item']}")
                 c_acess += q * float(row["R$ por unidade"]) * qtd
 
+    # ---------- Mão de obra (flexível) ----------
+    sugestao_mo = (h_acab + cfg("preparo_min") / 60) * cfg("mao_hora")
+    st.subheader("🧑‍🔧 Mão de obra desta peça")
+    c1, c2 = st.columns([3, 1])
+    modo_mo = c1.radio("Quanto cobrar pelo seu trabalho?", ["Usar a sugestão", "Definir meu valor"],
+                       horizontal=True)
+    with c2.popover("💡 Sugestão"):
+        st.markdown(f"**Sugestão para esta peça: {brl(sugestao_mo)}**")
+        st.write(f"= ({h_acab:.2f} h de acabamento + {cfg('preparo_min'):.0f} min de preparo) "
+                 f"× {brl(cfg('mao_hora'))} por hora")
+        st.markdown("**Referência pelo valor da sua hora:**")
+        st.write(f"• 15 min de trabalho = {brl(cfg('mao_hora') * 0.25)}  \n"
+                 f"• 30 min = {brl(cfg('mao_hora') * 0.5)}  \n"
+                 f"• 1 hora = {brl(cfg('mao_hora'))}  \n"
+                 f"• 2 horas = {brl(cfg('mao_hora') * 2)}")
+        st.caption("Peça com lixa, pintura ou montagem pede um valor maior. "
+                   "Peça que só sai da mesa pode ter um valor menor.")
+    if modo_mo == "Usar a sugestão":
+        c_mao = sugestao_mo
+        st.caption(f"Mão de obra usada: **{brl(c_mao)}**")
+    else:
+        c_mao = st.number_input("Minha mão de obra nesta peça (R$)", min_value=0.0,
+                                value=float(round(sugestao_mo, 2)), step=1.0, format="%.2f",
+                                help="Valor total do seu trabalho nesta peça (ou neste pedido).")
+
     # ---------- 3. Venda e lucro ----------
     st.header("💰 3. Onde vender e quanto lucrar")
     canal = st.radio("Canal de venda", ["Shopee", "Venda direta (Pix/WhatsApp)"], horizontal=True)
@@ -354,7 +379,6 @@ with aba_calc:
     c_falha = c_base / (1 - cfg("falha_pct") / 100) - c_base
     c_fabric = c_base + c_falha
     c_fixo = horas * fixo_hora
-    c_mao = (h_acab + cfg("preparo_min") / 60) * cfg("mao_hora")
     c_insumos = c_tinta + c_emb * qtd + c_acess
 
     custo_total = c_fabric + c_fixo + c_mao + c_insumos
