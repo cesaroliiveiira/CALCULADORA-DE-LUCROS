@@ -8,6 +8,7 @@ Mudanças feitas pela tela valem só até atualizar a página.
 """
 import json
 import math
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import pandas as pd
@@ -333,8 +334,9 @@ with aba_calc:
     sugestao_mo = (h_acab + cfg("preparo_min") / 60) * cfg("mao_hora")
     st.subheader("🧑‍🔧 Mão de obra desta peça")
     c1, c2 = st.columns([3, 1])
-    modo_mo = c1.radio("Quanto cobrar pelo seu trabalho?", ["Usar a sugestão", "Definir meu valor"],
-                       horizontal=True)
+    OPC_ZERO, OPC_SUG, OPC_MAN = "Zero (não cobrar)", "Usar a sugestão", "Definir meu valor"
+    modo_mo = c1.radio("Quanto cobrar pelo seu trabalho?", [OPC_ZERO, OPC_SUG, OPC_MAN],
+                       horizontal=True, index=0)
     with c2.popover("💡 Sugestão"):
         st.markdown(f"**Sugestão para esta peça: {brl(sugestao_mo)}**")
         st.write(f"= ({h_acab:.2f} h de acabamento + {cfg('preparo_min'):.0f} min de preparo) "
@@ -346,13 +348,17 @@ with aba_calc:
                  f"• 2 horas = {brl(cfg('mao_hora') * 2)}")
         st.caption("Peça com lixa, pintura ou montagem pede um valor maior. "
                    "Peça que só sai da mesa pode ter um valor menor.")
-    if modo_mo == "Usar a sugestão":
+    if modo_mo == OPC_SUG:
         c_mao = sugestao_mo
         st.caption(f"Mão de obra usada: **{brl(c_mao)}**")
-    else:
-        c_mao = st.number_input("Minha mão de obra nesta peça (R$)", min_value=0.0,
-                                value=float(round(sugestao_mo, 2)), step=1.0, format="%.2f",
+    elif modo_mo == OPC_MAN:
+        c_mao = st.number_input("Minha mão de obra nesta peça (R$)", min_value=0.0, value=0.0,
+                                step=1.0, format="%.2f", key="mo_manual",
                                 help="Valor total do seu trabalho nesta peça (ou neste pedido).")
+    else:
+        c_mao = 0.0
+        st.caption("⚠️ Mão de obra em **R$ 0,00**: seu trabalho não está entrando no preço. "
+                   "Escolha uma das opções ao lado para incluir.")
 
     # ---------- 3. Venda e lucro ----------
     st.header("💰 3. Onde vender e quanto lucrar")
@@ -397,6 +403,9 @@ with aba_calc:
     a.metric("Sua mão de obra", brl(c_mao), help="Preparo + acabamento")
     b.metric("Insumos + embalagem", brl(c_insumos))
 
+    st.success(f"## 🏦 GUARDAR PARA A IMPRESSORA: {brl(c_maquina)}  \n"
+               f"Amortização desta impressão ({horas:.1f} h × {brl(amort_hora)}/h)"
+               + (f" = {brl(c_maquina / qtd)} por peça" if qtd > 1 else ""))
     st.info(f"**Custo real de produção:** {brl(custo_total)}"
             + (f" ({brl(custo_un)} por peça)" if qtd > 1 else "") +
             "  \n🚫 Nunca venda abaixo disso, senão você paga para trabalhar.")
@@ -432,7 +441,7 @@ with aba_calc:
             [
                 ("Filamento", c_material / qtd),
                 ("Energia", c_energia / qtd),
-                ("Amortização da impressora", c_maquina / qtd),
+                ("⭐ Amortização (GUARDAR)", c_maquina / qtd),
                 ("Reserva para falhas", c_falha / qtd),
                 ("Custos fixos", c_fixo / qtd),
                 ("Mão de obra", c_mao / qtd),
@@ -452,14 +461,29 @@ with aba_calc:
     st.divider()
     st.header("📲 Mensagem para o WhatsApp")
     tipo_msg = st.radio("Qual mensagem?", ["Para o cliente", "Resumo interno (meus custos)"], horizontal=True)
-    prazo = st.text_input("Prazo de entrega (opcional)", placeholder="Ex.: 3 dias úteis")
 
-    titulo_peca = nome_peca.strip() if nome_peca.strip() else "Peça impressa em 3D"
+    hoje = datetime.now(timezone(timedelta(hours=-3))).date()  # horário de Brasília
+    c1, c2 = st.columns(2)
+    data_orc = c1.date_input("Data do orçamento", value=hoje, format="DD/MM/YYYY")
+    prazo = c2.text_input("Prazo de entrega (opcional)", placeholder="Ex.: 3 dias úteis")
+    c1, c2 = st.columns(2)
+    cliente = c1.text_input("Nome do cliente", placeholder="Ex.: Maria Souza")
+    produto = c2.text_input("Nome do produto", placeholder="Se vazio, usa o nome da peça lá em cima")
+    st.caption("Deixou algum nome em branco? A mensagem sai com uma linha ____ "
+               "para você completar no WhatsApp antes de enviar.")
+
+    LINHA = "__________"
+    data_txt = data_orc.strftime("%d/%m/%Y")
+    cliente_txt = cliente.strip() or LINHA
+    produto_txt = produto.strip() or nome_peca.strip() or LINHA
+
     if tipo_msg == "Para o cliente":
         linhas = [
             "*Orçamento - Max3dLab* 🖨️",
+            f"Data: {data_txt}",
             "",
-            f"Peça: {titulo_peca}",
+            f"Cliente: {cliente_txt}",
+            f"Peça: {produto_txt}",
             f"Material: {material}",
             f"Quantidade: {qtd}",
         ]
@@ -471,11 +495,15 @@ with aba_calc:
         mensagem = "\n".join(linhas)
     else:
         linhas = [
-            f"*Resumo interno - {titulo_peca}*",
+            f"*Resumo interno - {produto_txt}*",
+            f"Data: {data_txt}",
+            f"Cliente: {cliente_txt}",
             f"Material: {material} | {gramas:.0f} g | {horas_in}h{min_in:02d}",
             f"Quantidade: {qtd}",
             f"Canal: {canal}",
             f"Custo total: {brl(custo_total)}",
+            f"Mão de obra: {brl(c_mao)}",
+            f"*Guardar p/ impressora: {brl(c_maquina)}*",
             f"Preço por peça: {brl(preco_un)}",
         ]
         if canal == "Shopee":
