@@ -304,21 +304,35 @@ with aba_calc:
     st.caption("Pegue no Bambu Studio / Orca depois de fatiar a peça.")
     c1, c2 = st.columns(2)
     material = c1.selectbox("Material", mats["Material"].tolist())
-    qtd = c2.number_input("Quantas peças?", min_value=1, value=1, step=1,
-                          help="Imprimiu 4 chaveiros juntos? Coloque o peso e o tempo TOTAIS e 4 aqui.")
+    qtd = c2.number_input("Quantas peças?", min_value=1, value=1, step=1)
     preco_kg = float(mats.loc[mats["Material"] == material, "R$/kg"].iloc[0])
     c1, c2, c3 = st.columns(3)
-    gramas = c1.number_input("Peso total (g)", min_value=0.0, value=50.0, step=5.0, format="%.1f")
-    horas_in = c2.number_input("Horas", min_value=0, value=3, step=1)
-    min_in = c3.number_input("Minutos", min_value=0, max_value=59, value=0, step=5)
-    horas = horas_in + min_in / 60
+    gramas_in = c1.number_input("Peso (g)", min_value=0.0, value=50.0, step=5.0, format="%.1f")
+    h_in = c2.number_input("Horas", min_value=0, value=3, step=1)
+    m_in = c3.number_input("Minutos", min_value=0, max_value=59, value=0, step=5)
+
+    OPC_PECA = "De 1 peça (o app multiplica pela quantidade)"
+    OPC_LOTE = "Do lote inteiro (já é o total)"
+    base_dados = st.radio("Esses números do fatiador são:", [OPC_PECA, OPC_LOTE], horizontal=False,
+                          help="Fatiou UMA peça? Use a primeira opção: peso, tempo, energia e custos "
+                               "são multiplicados pela quantidade. Imprimiu várias juntas na mesma "
+                               "mesa e o fatiador mostra o total da mesa? Use a segunda.")
+    por_peca = base_dados == OPC_PECA
+    fator = qtd if por_peca else 1          # quantas vezes multiplicar peso e tempo
+    n_impr = qtd if por_peca else 1         # quantas impressões (preparo) o pedido tem
+    gramas = gramas_in * fator              # peso TOTAL do pedido
+    horas = (h_in + m_in / 60) * fator      # tempo TOTAL do pedido
+    tot_min = round(horas * 60)
+    tempo_txt = f"{tot_min // 60}h{tot_min % 60:02d}"
+    if qtd > 1 or not por_peca:
+        st.caption(f"📦 **Total do pedido:** {gramas:,.0f} g de filamento · {tempo_txt} de impressão")
 
     # ---------- 2. Acabamento ----------
     st.header("🎨 2. Acabamento e embalagem")
     c1, c2, c3 = st.columns(3)
-    h_acab = c1.number_input("Horas de acabamento", min_value=0.0, value=0.5, step=0.25, format="%.2f",
+    h_acab = c1.number_input("Horas de acabamento por peça", min_value=0.0, value=0.5, step=0.25, format="%.2f",
                              help="Lixar, pintar, montar. 15 minutos = 0,25")
-    c_tinta = c2.number_input("Tinta / lixa / cola (R$)", min_value=0.0, value=0.0, step=0.5, format="%.2f")
+    c_tinta = c2.number_input("Tinta / lixa / cola por peça (R$)", min_value=0.0, value=0.0, step=0.5, format="%.2f")
     c_emb = c3.number_input("Embalagem por peça (R$)", min_value=0.0, value=3.5, step=0.5, format="%.2f")
 
     c_acess = 0.0
@@ -331,15 +345,16 @@ with aba_calc:
                 c_acess += q * float(row["R$ por unidade"]) * qtd
 
     # ---------- Mão de obra (flexível) ----------
-    sugestao_mo = (h_acab + cfg("preparo_min") / 60) * cfg("mao_hora")
-    st.subheader("🧑‍🔧 Mão de obra desta peça")
+    sugestao_mo = (h_acab * qtd + cfg("preparo_min") / 60 * n_impr) * cfg("mao_hora")
+    st.subheader("🧑‍🔧 Mão de obra do pedido")
     c1, c2 = st.columns([3, 1])
     OPC_ZERO, OPC_SUG, OPC_MAN = "Zero (não cobrar)", "Usar a sugestão", "Definir meu valor"
     modo_mo = c1.radio("Quanto cobrar pelo seu trabalho?", [OPC_ZERO, OPC_SUG, OPC_MAN],
                        horizontal=True, index=0)
     with c2.popover("💡 Sugestão"):
-        st.markdown(f"**Sugestão para esta peça: {brl(sugestao_mo)}**")
-        st.write(f"= ({h_acab:.2f} h de acabamento + {cfg('preparo_min'):.0f} min de preparo) "
+        st.markdown(f"**Sugestão para este pedido: {brl(sugestao_mo)}**")
+        st.write(f"= ({h_acab:.2f} h de acabamento × {qtd} peça(s) "
+                 f"+ {cfg('preparo_min'):.0f} min de preparo × {n_impr} impressão(ões)) "
                  f"× {brl(cfg('mao_hora'))} por hora")
         st.markdown("**Referência pelo valor da sua hora:**")
         st.write(f"• 15 min de trabalho = {brl(cfg('mao_hora') * 0.25)}  \n"
@@ -352,9 +367,9 @@ with aba_calc:
         c_mao = sugestao_mo
         st.caption(f"Mão de obra usada: **{brl(c_mao)}**")
     elif modo_mo == OPC_MAN:
-        c_mao = st.number_input("Minha mão de obra nesta peça (R$)", min_value=0.0, value=0.0,
+        c_mao = st.number_input("Minha mão de obra no pedido todo (R$)", min_value=0.0, value=0.0,
                                 step=1.0, format="%.2f", key="mo_manual",
-                                help="Valor total do seu trabalho nesta peça (ou neste pedido).")
+                                help="Valor total do seu trabalho em TODAS as peças deste pedido.")
     else:
         c_mao = 0.0
         st.caption("⚠️ Mão de obra em **R$ 0,00**: seu trabalho não está entrando no preço. "
@@ -385,7 +400,7 @@ with aba_calc:
     c_falha = c_base / (1 - cfg("falha_pct") / 100) - c_base
     c_fabric = c_base + c_falha
     c_fixo = horas * fixo_hora
-    c_insumos = c_tinta + c_emb * qtd + c_acess
+    c_insumos = (c_tinta + c_emb) * qtd + c_acess
 
     custo_total = c_fabric + c_fixo + c_mao + c_insumos
     custo_un = custo_total / qtd
@@ -498,7 +513,7 @@ with aba_calc:
             f"*Resumo interno - {produto_txt}*",
             f"Data: {data_txt}",
             f"Cliente: {cliente_txt}",
-            f"Material: {material} | {gramas:.0f} g | {horas_in}h{min_in:02d}",
+            f"Material: {material} | {gramas:.0f} g | {tempo_txt} (total do pedido)",
             f"Quantidade: {qtd}",
             f"Canal: {canal}",
             f"Custo total: {brl(custo_total)}",
